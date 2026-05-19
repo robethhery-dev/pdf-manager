@@ -103,10 +103,7 @@ function LoginScreen() {
               )}
             </Button>
           </form>
-          <div className="mt-4 text-center text-xs text-bark bg-parchment p-3 rounded-lg border border-sand/30">
-            <p className="font-medium">Default Admin Login:</p>
-            <p>Username: <code className="bg-white px-1.5 py-0.5 rounded text-forest">admin</code> / Password: <code className="bg-white px-1.5 py-0.5 rounded text-forest">admin123</code></p>
-          </div>
+
         </CardContent>
       </Card>
     </div>
