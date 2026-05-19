@@ -41,14 +41,14 @@ function LoginScreen() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
-      <Card className="w-full max-w-md shadow-xl border-0">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#FAF6EE] via-[#E8DFC8] to-[#7BA87A]/20 p-4">
+      <Card className="w-full max-w-md shadow-xl border-0 bg-white/95 backdrop-blur">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-            <FileText className="w-8 h-8 text-primary-foreground" />
+          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-forest to-leaf rounded-2xl flex items-center justify-center mb-4 shadow-lg">
+            <FileText className="w-8 h-8 text-white" />
           </div>
-          <CardTitle className="text-2xl font-bold">PDF Manager</CardTitle>
-          <CardDescription className="text-base">
+          <CardTitle className="text-2xl font-bold text-forest">PDF Manager</CardTitle>
+          <CardDescription className="text-base text-bark-light">
             Kelola akses halaman PDF dengan mudah dan aman
           </CardDescription>
         </CardHeader>
@@ -103,9 +103,9 @@ function LoginScreen() {
               )}
             </Button>
           </form>
-          <div className="mt-4 text-center text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg">
+          <div className="mt-4 text-center text-xs text-bark bg-parchment p-3 rounded-lg border border-sand/30">
             <p className="font-medium">Default Admin Login:</p>
-            <p>Username: <code className="bg-background px-1 rounded">admin</code> / Password: <code className="bg-background px-1 rounded">admin123</code></p>
+            <p>Username: <code className="bg-white px-1.5 py-0.5 rounded text-forest">admin</code> / Password: <code className="bg-white px-1.5 py-0.5 rounded text-forest">admin123</code></p>
           </div>
         </CardContent>
       </Card>
@@ -119,31 +119,31 @@ function AppHeader() {
   const logout = useAppStore((s) => s.logout)
 
   return (
-    <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+    <header className="sticky top-0 z-50 bg-gradient-to-r from-white/95 to-parchment/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-sand/40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-sm">
-            <FileText className="w-5 h-5 text-primary-foreground" />
+          <div className="w-9 h-9 bg-gradient-to-br from-forest to-leaf rounded-xl flex items-center justify-center shadow-sm">
+            <FileText className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold leading-tight">PDF Manager</h1>
-            <p className="text-xs text-muted-foreground hidden sm:block">Kelola Akses Dokumen PDF</p>
+            <h1 className="text-lg font-bold leading-tight text-forest">PDF Manager</h1>
+            <p className="text-xs text-wood hidden sm:block">Kelola Akses Dokumen PDF</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-muted/50 px-3 py-1.5 rounded-lg">
-            <div className="w-7 h-7 bg-primary/10 rounded-full flex items-center justify-center">
-              <span className="text-xs font-bold text-primary">{user?.name?.charAt(0).toUpperCase()}</span>
+          <div className="flex items-center gap-2 bg-parchment/80 px-3 py-1.5 rounded-lg border border-sand/20">
+            <div className="w-7 h-7 bg-forest/10 rounded-full flex items-center justify-center">
+              <span className="text-xs font-bold text-forest">{user?.name?.charAt(0).toUpperCase()}</span>
             </div>
             <div className="hidden sm:block">
               <p className="text-sm font-medium leading-tight">{user?.name}</p>
               <p className="text-xs text-muted-foreground">{user?.role === 'ADMIN' ? 'Administrator' : 'Pengguna'}</p>
             </div>
-            <Badge variant={user?.role === 'ADMIN' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 h-5">
+            <Badge className={`text-[10px] px-1.5 py-0 h-5 ${user?.role === 'ADMIN' ? 'bg-forest text-white' : 'bg-wood text-white'}`}>
               {user?.role === 'ADMIN' ? 'Admin' : 'User'}
             </Badge>
           </div>
-          <Button variant="ghost" size="icon" onClick={logout} title="Logout" className="h-9 w-9">
+          <Button variant="ghost" size="icon" onClick={logout} title="Logout" className="h-9 w-9 text-bark hover:text-forest hover:bg-forest/10">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
@@ -296,8 +296,8 @@ function PdfManagement() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
-                      <FileText className="h-5 w-5 text-red-600" />
+                    <div className="w-10 h-10 bg-forest/10 rounded-lg flex items-center justify-center shrink-0">
+                      <FileText className="h-5 w-5 text-forest" />
                     </div>
                     <div className="min-w-0">
                       <CardTitle className="text-sm font-medium truncate" title={pdf.originalName}>
@@ -822,7 +822,7 @@ function AssignmentManagement() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-red-500 shrink-0" />
+                      <FileText className="h-4 w-4 text-forest shrink-0" />
                       <span className="text-sm truncate max-w-[150px]">{a.pdf?.originalName}</span>
                     </div>
                   </TableCell>
@@ -936,8 +936,8 @@ function PdfViewer() {
         <CardHeader className="pb-3 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
-                <FileText className="h-5 w-5 text-red-600" />
+              <div className="w-9 h-9 bg-forest/10 rounded-lg flex items-center justify-center shrink-0">
+                <FileText className="h-5 w-5 text-forest" />
               </div>
               <div className="min-w-0">
                 <CardTitle className="text-base truncate">{viewingPdf.originalName}</CardTitle>
@@ -1006,9 +1006,9 @@ function AdminDashboard() {
   }, [fetchPdfs, fetchUsers, fetchAssignments])
 
   const stats = [
-    { label: 'Total PDF', value: pdfs.length, icon: FileText, color: 'text-red-500', bg: 'bg-red-50' },
-    { label: 'Total User', value: users.filter((u) => u.role !== 'ADMIN').length, icon: Users, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-    { label: 'Assignment', value: assignments.length, icon: Shield, color: 'text-amber-500', bg: 'bg-amber-50' },
+    { label: 'Total PDF', value: pdfs.length, icon: FileText, color: 'text-forest', bg: 'bg-forest/10' },
+    { label: 'Total User', value: users.filter((u) => u.role !== 'ADMIN').length, icon: Users, color: 'text-leaf', bg: 'bg-leaf/10' },
+    { label: 'Assignment', value: assignments.length, icon: Shield, color: 'text-wood', bg: 'bg-wood/10' },
   ]
 
   return (
@@ -1099,8 +1099,8 @@ function UserDashboard() {
             <Card key={item.id} className="group hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 <div className="flex items-start gap-3">
-                  <div className="w-11 h-11 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
-                    <FileText className="h-6 w-6 text-red-600" />
+                  <div className="w-11 h-11 bg-forest/10 rounded-lg flex items-center justify-center shrink-0">
+                    <FileText className="h-6 w-6 text-forest" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-sm font-medium truncate" title={item.originalName}>
@@ -1166,9 +1166,9 @@ function UserDashboard() {
 // ===================== FOOTER =====================
 function Footer() {
   return (
-    <footer className="mt-auto border-t bg-muted/30">
+    <footer className="mt-auto border-t border-sand/30 bg-gradient-to-r from-parchment to-cream">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-        <p className="text-xs text-muted-foreground text-center">
+        <p className="text-xs text-wood text-center">
           PDF Manager — Kelola akses dokumen PDF dengan aman dan efisien
         </p>
       </div>
@@ -1205,7 +1205,7 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-cream via-white to-parchment">
       <AppHeader />
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
         {user.role === 'ADMIN' ? <AdminDashboard /> : <UserDashboard />}
