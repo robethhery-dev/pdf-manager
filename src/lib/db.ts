@@ -42,7 +42,25 @@ function createPrismaClient() {
   )
 }
 
-export const db = globalForPrisma.prisma ?? createPrismaClient()
+// LAZY INITIALIZATION — hindari instantiate Prisma/libSQL saat build time.
+// Module-level instantiation bisa crash `next build` karena process.env.DATABASE_URL
+// mungkin undefined saat Next.js collect static page data.
+let _db: PrismaClient | null = null
 
-// Cache the client globally to avoid creating new instances on every hot-reload / request
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+function getDb(): PrismaClient {
+  if (_db) return _db
+  _db = globalForPrisma.prisma ?? createPrismaClient()
+  if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = _db
+  return _db
+}
+
+// Proxy agar `import { db }` tetap kompatibel, tapi instantiasi tertunda sampai dipakai.
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getDb()
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop]
+    return typeof value === 'function'
+      ? (value as (...args: unknown[]) => unknown).bind(client)
+      : value
+  },
+}) as PrismaClient
