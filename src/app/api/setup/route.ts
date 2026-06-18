@@ -1,41 +1,67 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
-import { execSync } from 'child_process'
 
-// This endpoint runs prisma db push + seeds admin
-// Call it ONCE after deployment to initialize the database
-export async function POST(req: NextRequest) {
+// This endpoint initializes the database by creating tables via raw SQL
+// and seeding a default admin account.
+// Call it ONCE after deployment: GET https://your-app.vercel.app/api/setup
+export async function GET() {
   const startTime = Date.now()
   const logs: string[] = []
 
   try {
-    // Optional: protect with a setup secret
-    const setupSecret = process.env.SETUP_SECRET
-    if (setupSecret) {
-      const body = await req.json().catch(() => ({}))
-      if (body?.secret !== setupSecret) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-    }
+    // Step 1: Create tables via raw SQL (idempotent)
+    logs.push('[1/3] Creating database tables...')
 
-    // Step 1: Run prisma db push to create tables
-    logs.push('[1/3] Running prisma db push...')
-    try {
-      const output = execSync('npx prisma db push --skip-generate --accept-data-loss 2>&1', {
-        encoding: 'utf8',
-        timeout: 60000,
-        env: {
-          ...process.env,
-          NODE_ENV: 'production',
-        },
-      })
-      logs.push('Schema pushed successfully')
-      logs.push(output.substring(0, 500))
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      logs.push(`Schema push error: ${errMsg.substring(0, 300)}`)
-      // Continue anyway - tables might already exist
+    const createTableStatements = [
+      `CREATE TABLE IF NOT EXISTS "users" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "username" TEXT NOT NULL,
+        "password" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "role" TEXT NOT NULL DEFAULT 'USER',
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "users_username_key" UNIQUE ("username")
+      )`,
+      `CREATE TABLE IF NOT EXISTS "pdf_documents" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "filename" TEXT NOT NULL,
+        "originalName" TEXT NOT NULL,
+        "totalPages" INTEGER NOT NULL,
+        "fileData" BLOB NOT NULL,
+        "fileSize" INTEGER NOT NULL,
+        "uploadedBy" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "pdf_documents_filename_key" UNIQUE ("filename")
+      )`,
+      `CREATE TABLE IF NOT EXISTS "page_assignments" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "userId" TEXT NOT NULL,
+        "pdfId" TEXT NOT NULL,
+        "pageNumbers" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" DATETIME NOT NULL,
+        CONSTRAINT "page_assignments_userId_pdfId_key" UNIQUE ("userId", "pdfId"),
+        CONSTRAINT "page_assignments_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE,
+        CONSTRAINT "page_assignments_pdfId_fkey" FOREIGN KEY ("pdfId") REFERENCES "pdf_documents" ("id") ON DELETE CASCADE
+      )`,
+    ]
+
+    for (const sql of createTableStatements) {
+      try {
+        await db.$executeRawUnsafe(sql)
+        logs.push(`✓ Table created/verified: ${sql.match(/"(\w+)"/)?.[1] || 'unknown'}`)
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        // Ignore "already exists" errors
+        if (errMsg.includes('already exists')) {
+          logs.push(`✓ Table already exists: ${sql.match(/"(\w+)"/)?.[1] || 'unknown'}`)
+        } else {
+          logs.push(`⚠ Table creation note: ${errMsg.substring(0, 200)}`)
+        }
+      }
     }
 
     // Step 2: Check if admin exists
@@ -47,88 +73,6 @@ export async function POST(req: NextRequest) {
       const errMsg = err instanceof Error ? err.message : String(err)
       logs.push(`Query error: ${errMsg.substring(0, 300)}`)
       return NextResponse.json({
-        error: 'Database query failed. Schema might not be created.',
-        logs,
-        hint: 'Run prisma db push manually: npx prisma db push',
-      }, { status: 500 })
-    }
-
-    if (admin) {
-      logs.push('Admin already exists')
-      return NextResponse.json({
-        message: 'Database already initialized. Admin exists.',
-        admin: { username: admin.username },
-        logs,
-        duration: `${Date.now() - startTime}ms`,
-      })
-    }
-
-    // Step 3: Create default admin
-    logs.push('[3/3] Creating default admin...')
-    const hashedPassword = await bcrypt.hash('admin123', 10)
-    const newAdmin = await db.user.create({
-      data: {
-        username: 'admin',
-        password: hashedPassword,
-        name: 'Administrator',
-        role: 'ADMIN',
-      },
-      select: { id: true, username: true, name: true, role: true },
-    })
-
-    logs.push('Admin created successfully')
-
-    return NextResponse.json({
-      message: 'Database initialized successfully!',
-      admin: newAdmin,
-      credentials: {
-        username: 'admin',
-        password: 'admin123 (CHANGE THIS IMMEDIATELY)',
-      },
-      logs,
-      duration: `${Date.now() - startTime}ms`,
-    })
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error)
-    logs.push(`Fatal error: ${errMsg}`)
-    return NextResponse.json({
-      error: 'Setup failed',
-      logs,
-      duration: `${Date.now() - startTime}ms`,
-    }, { status: 500 })
-  }
-}
-
-// GET endpoint for easy browser-based setup
-export async function GET() {
-  const startTime = Date.now()
-  const logs: string[] = []
-
-  try {
-    logs.push('[1/3] Running prisma db push...')
-
-    // Step 1: Push schema
-    try {
-      const output = execSync('npx prisma db push --skip-generate --accept-data-loss 2>&1', {
-        encoding: 'utf8',
-        timeout: 60000,
-        env: { ...process.env, NODE_ENV: 'production' },
-      })
-      logs.push('Schema pushed: ' + output.substring(0, 200))
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      logs.push('Schema push note: ' + errMsg.substring(0, 200))
-    }
-
-    // Step 2: Check admin
-    logs.push('[2/3] Checking admin...')
-    let admin
-    try {
-      admin = await db.user.findFirst({ where: { role: 'ADMIN' } })
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      logs.push('Query error: ' + errMsg.substring(0, 300))
-      return NextResponse.json({
         status: 'error',
         step: 'query-admin',
         logs,
@@ -137,10 +81,10 @@ export async function GET() {
     }
 
     if (admin) {
-      logs.push('Admin exists: ' + admin.username)
+      logs.push(`✓ Admin already exists: ${admin.username}`)
       return NextResponse.json({
         status: 'success',
-        message: 'Database ready. Admin exists.',
+        message: 'Database ready. Admin already exists.',
         admin: { username: admin.username, name: admin.name },
         credentials: { username: 'admin', password: 'admin123' },
         logs,
@@ -148,8 +92,8 @@ export async function GET() {
       })
     }
 
-    // Step 3: Create admin
-    logs.push('[3/3] Creating admin...')
+    // Step 3: Create default admin
+    logs.push('[3/3] Creating default admin account...')
     const hashedPassword = await bcrypt.hash('admin123', 10)
     admin = await db.user.create({
       data: {
@@ -161,23 +105,31 @@ export async function GET() {
       select: { id: true, username: true, name: true, role: true },
     })
 
-    logs.push('Admin created: ' + admin.username)
+    logs.push(`✓ Admin created: ${admin.username}`)
 
     return NextResponse.json({
       status: 'success',
       message: 'Database initialized! You can now login.',
       admin: { username: admin.username, name: admin.name },
-      credentials: { username: 'admin', password: 'admin123' },
+      credentials: {
+        username: 'admin',
+        password: 'admin123 (CHANGE THIS IMMEDIATELY AFTER LOGIN)',
+      },
       logs,
       duration: `${Date.now() - startTime}ms`,
     })
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
-    logs.push('Fatal: ' + errMsg)
+    logs.push(`Fatal error: ${errMsg.substring(0, 500)}`)
     return NextResponse.json({
       status: 'error',
+      message: 'Setup failed',
       logs,
       duration: `${Date.now() - startTime}ms`,
     }, { status: 500 })
   }
+}
+
+export async function POST() {
+  return GET()
 }
