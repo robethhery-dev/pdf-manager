@@ -10,7 +10,9 @@ function createPrismaClient() {
   const url = process.env.DATABASE_URL
 
   if (!url) {
-    throw new Error('DATABASE_URL environment variable is not set')
+    throw new Error(
+      'DATABASE_URL belum diset. Set di Vercel: DATABASE_URL = libsql://... (URL Turso)'
+    )
   }
 
   // If using Turso (libsql://) or any HTTP URL, use the libSQL adapter
@@ -23,8 +25,21 @@ function createPrismaClient() {
     return new PrismaClient({ adapter })
   }
 
-  // Local SQLite file - use plain PrismaClient with direct query engine
-  return new PrismaClient()
+  // Local SQLite file - hanya untuk development
+  if (url.startsWith('file:')) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'DATABASE_URL = "file:..." tidak bisa dipakai di production (Vercel filesystem read-only). ' +
+          'Set DATABASE_URL = libsql://... (URL Turso) di Vercel Environment Variables.'
+      )
+    }
+    return new PrismaClient()
+  }
+
+  throw new Error(
+    `DATABASE_URL format tidak dikenali: "${url.slice(0, 20)}...". ` +
+      'Harus "libsql://...", "http(s)://...", atau "file:...".'
+  )
 }
 
 export const db = globalForPrisma.prisma ?? createPrismaClient()
