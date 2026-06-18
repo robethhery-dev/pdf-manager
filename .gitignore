@@ -52,3 +52,22 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Local SQLite database (jangan di-commit, dibuat otomatis oleh prisma)
+/db/*.db
+/db/*.db-journal
+/db/*.db-shm
+/db/*.db-wal
+
+# Upload folder (tidak dipakai lagi, PDF disimpan di DB)
+/uploads/
+/download/
+
+# Worklog
+worklog.md
+
+# Allow .env.example (template) tapi exclude .env
+!.env.example
+.env
+.env.local
+.env.production
