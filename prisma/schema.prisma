@@ -16,6 +16,8 @@ model User {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   assignments  PageAssignment[]
+
+  @@map("users")
 }
 
 model PdfDocument {
@@ -23,7 +25,8 @@ model PdfDocument {
   filename     String          @unique
   originalName String
   totalPages   Int
-  filePath     String
+  fileData     Bytes           // PDF binary stored in DB (works on Vercel serverless)
+  fileSize     Int             // file size in bytes
   uploadedBy   String
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt

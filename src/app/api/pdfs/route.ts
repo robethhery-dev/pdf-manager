@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser } from '@/lib/auth'
 import { PDFDocument } from 'pdf-lib'
-import { writeFile, mkdir, unlink, readFile } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
 import { randomUUID } from 'crypto'
-
-const UPLOAD_DIR = path.join(process.cwd(), 'uploads')
 
 export async function GET() {
   try {
@@ -16,11 +11,25 @@ export async function GET() {
       return NextResponse.json({ error: 'Akses ditolak' }, { status: 403 })
     }
 
+    // Use select to avoid fetching large fileData field
     const pdfs = await db.pdfDocument.findMany({
       orderBy: { createdAt: 'desc' },
-      include: {
+      select: {
+        id: true,
+        filename: true,
+        originalName: true,
+        totalPages: true,
+        fileSize: true,
+        uploadedBy: true,
+        createdAt: true,
+        updatedAt: true,
         assignments: {
-          select: { id: true, userId: true, pageNumbers: true, user: { select: { name: true, username: true } } },
+          select: {
+            id: true,
+            userId: true,
+            pageNumbers: true,
+            user: { select: { name: true, username: true } },
+          },
         },
       },
     })
@@ -58,23 +67,25 @@ export async function POST(req: NextRequest) {
     const pdfDoc = await PDFDocument.load(buffer)
     const totalPages = pdfDoc.getPageCount()
 
-    // Save file
-    if (!existsSync(UPLOAD_DIR)) {
-      await mkdir(UPLOAD_DIR, { recursive: true })
-    }
-
+    // Save to database (fileData stored as Bytes)
     const filename = `${randomUUID()}.pdf`
-    const filePath = path.join(UPLOAD_DIR, filename)
-    await writeFile(filePath, buffer)
-
-    // Save to database
     const pdf = await db.pdfDocument.create({
       data: {
         filename,
         originalName: file.name,
         totalPages,
-        filePath,
+        fileData: buffer,
+        fileSize: buffer.length,
         uploadedBy: currentUser.userId,
+      },
+      select: {
+        id: true,
+        filename: true,
+        originalName: true,
+        totalPages: true,
+        fileSize: true,
+        uploadedBy: true,
+        createdAt: true,
       },
     })
 
@@ -104,12 +115,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'PDF tidak ditemukan' }, { status: 404 })
     }
 
-    // Delete file from disk
-    if (existsSync(pdf.filePath)) {
-      await unlink(pdf.filePath)
-    }
-
-    // Delete from database (assignments will cascade)
+    // Delete from database (assignments will cascade, fileData is in DB too)
     await db.pdfDocument.delete({ where: { id } })
 
     return NextResponse.json({ message: 'PDF berhasil dihapus' })
@@ -119,7 +125,7 @@ export async function DELETE(req: NextRequest) {
   }
 }
 
-// GET individual PDF view - extracts only assigned pages for user
+// Extract only requested pages and return as PDF (access-controlled)
 export async function PATCH(req: NextRequest) {
   try {
     const currentUser = await getCurrentUser()
@@ -155,9 +161,8 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // Read the PDF file
-    const pdfBytes = await readFile(pdf.filePath)
-    const srcDoc = await PDFDocument.load(pdfBytes)
+    // Load the PDF from database (fileData is Bytes -> Buffer)
+    const srcDoc = await PDFDocument.load(pdf.fileData)
     const newDoc = await PDFDocument.create()
 
     // Copy only requested pages
@@ -172,7 +177,7 @@ export async function PATCH(req: NextRequest) {
 
     const pdfBytesResult = await newDoc.save()
 
-    return new NextResponse(pdfBytesResult, {
+    return new NextResponse(Buffer.from(pdfBytesResult), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="${pdf.originalName}"`,
