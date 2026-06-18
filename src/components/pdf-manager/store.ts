@@ -92,6 +92,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ user: data.user })
         return true
       }
+      // Jika login gagal (401), kemungkinan admin belum di-seed.
+      // Coba seed ulang lalu retry sekali.
+      if (res.status === 401) {
+        try {
+          await fetch('/api/seed', { method: 'POST' })
+          const retryRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          })
+          const retryData = await retryRes.json()
+          if (retryRes.ok) {
+            set({ user: retryData.user })
+            return true
+          }
+        } catch {
+          // ignore retry errors
+        }
+      }
       return false
     } catch {
       return false

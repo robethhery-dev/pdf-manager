@@ -1180,10 +1180,22 @@ export default function HomePage() {
   const checkAuth = useAppStore((s) => s.checkAuth)
 
   useEffect(() => {
-    // Seed admin on first load
-    fetch('/api/seed', { method: 'POST' }).then(() => {
-      checkAuth()
-    })
+    // Seed admin on first load - await agar login tidak mendahului seed
+    let cancelled = false
+    const init = async () => {
+      try {
+        await fetch('/api/seed', { method: 'POST' })
+      } catch (e) {
+        console.error('Seed failed on load:', e)
+      }
+      if (!cancelled) {
+        checkAuth()
+      }
+    }
+    init()
+    return () => {
+      cancelled = true
+    }
   }, [checkAuth])
 
   if (isLoading) {

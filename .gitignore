@@ -71,3 +71,7 @@ worklog.md
 .env
 .env.local
 .env.production
+
+# Process/runtime files
+.zscripts/
+/tool-results/
