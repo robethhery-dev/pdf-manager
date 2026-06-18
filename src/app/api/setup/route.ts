@@ -1,90 +1,84 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { createClient } from '@libsql/client'
 import bcrypt from 'bcryptjs'
 
-// This endpoint initializes the database by creating tables via raw SQL
-// and seeding a default admin account.
-// Call it ONCE after deployment: GET https://your-app.vercel.app/api/setup
+// Direct libSQL setup endpoint - bypasses Prisma entirely
+// This is the most reliable way to initialize Turso database
 export async function GET() {
   const startTime = Date.now()
   const logs: string[] = []
 
   try {
-    // Step 1: Create tables via raw SQL (idempotent)
-    logs.push('[1/3] Creating database tables...')
+    const url = process.env.DATABASE_URL
+    const authToken = process.env.DATABASE_AUTH_TOKEN
 
-    const createTableStatements = [
-      `CREATE TABLE IF NOT EXISTS "users" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "username" TEXT NOT NULL,
-        "password" TEXT NOT NULL,
-        "name" TEXT NOT NULL,
-        "role" TEXT NOT NULL DEFAULT 'USER',
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "users_username_key" UNIQUE ("username")
-      )`,
-      `CREATE TABLE IF NOT EXISTS "pdf_documents" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "filename" TEXT NOT NULL,
-        "originalName" TEXT NOT NULL,
-        "totalPages" INTEGER NOT NULL,
-        "fileData" BLOB NOT NULL,
-        "fileSize" INTEGER NOT NULL,
-        "uploadedBy" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "pdf_documents_filename_key" UNIQUE ("filename")
-      )`,
-      `CREATE TABLE IF NOT EXISTS "page_assignments" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "userId" TEXT NOT NULL,
-        "pdfId" TEXT NOT NULL,
-        "pageNumbers" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "page_assignments_userId_pdfId_key" UNIQUE ("userId", "pdfId"),
-        CONSTRAINT "page_assignments_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE,
-        CONSTRAINT "page_assignments_pdfId_fkey" FOREIGN KEY ("pdfId") REFERENCES "pdf_documents" ("id") ON DELETE CASCADE
-      )`,
-    ]
-
-    for (const sql of createTableStatements) {
-      try {
-        await db.$executeRawUnsafe(sql)
-        logs.push(`✓ Table created/verified: ${sql.match(/"(\w+)"/)?.[1] || 'unknown'}`)
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        // Ignore "already exists" errors
-        if (errMsg.includes('already exists')) {
-          logs.push(`✓ Table already exists: ${sql.match(/"(\w+)"/)?.[1] || 'unknown'}`)
-        } else {
-          logs.push(`⚠ Table creation note: ${errMsg.substring(0, 200)}`)
-        }
-      }
-    }
-
-    // Step 2: Check if admin exists
-    logs.push('[2/3] Checking for existing admin...')
-    let admin
-    try {
-      admin = await db.user.findFirst({ where: { role: 'ADMIN' } })
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      logs.push(`Query error: ${errMsg.substring(0, 300)}`)
+    if (!url) {
       return NextResponse.json({
         status: 'error',
-        step: 'query-admin',
+        message: 'DATABASE_URL is not set',
         logs,
-        duration: `${Date.now() - startTime}ms`,
       }, { status: 500 })
     }
 
-    if (admin) {
+    logs.push(`[0] Connecting to: ${url.substring(0, 30)}...`)
+
+    // Create direct libSQL client
+    const client = createClient({
+      url,
+      authToken: authToken || undefined,
+    })
+
+    // Step 1: Create tables
+    logs.push('[1/4] Creating users table...')
+    await client.execute(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'USER',
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+    logs.push('✓ users table ready')
+
+    logs.push('[2/4] Creating pdf_documents table...')
+    await client.execute(`CREATE TABLE IF NOT EXISTS pdf_documents (
+      id TEXT PRIMARY KEY,
+      filename TEXT NOT NULL UNIQUE,
+      originalName TEXT NOT NULL,
+      totalPages INTEGER NOT NULL,
+      fileData BLOB NOT NULL,
+      fileSize INTEGER NOT NULL,
+      uploadedBy TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
+    )`)
+    logs.push('✓ pdf_documents table ready')
+
+    logs.push('[3/4] Creating page_assignments table...')
+    await client.execute(`CREATE TABLE IF NOT EXISTS page_assignments (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      pdfId TEXT NOT NULL,
+      pageNumbers TEXT NOT NULL,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(userId, pdfId),
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (pdfId) REFERENCES pdf_documents(id) ON DELETE CASCADE
+    )`)
+    logs.push('✓ page_assignments table ready')
+
+    // Step 4: Check & create admin
+    logs.push('[4/4] Checking admin...')
+    const result = await client.execute('SELECT id, username, name FROM users WHERE role = ? LIMIT 1', ['ADMIN'])
+
+    if (result.rows.length > 0) {
+      const admin = result.rows[0]
       logs.push(`✓ Admin already exists: ${admin.username}`)
       return NextResponse.json({
         status: 'success',
-        message: 'Database ready. Admin already exists.',
+        message: 'Database ready. Admin exists.',
         admin: { username: admin.username, name: admin.name },
         credentials: { username: 'admin', password: 'admin123' },
         logs,
@@ -92,35 +86,30 @@ export async function GET() {
       })
     }
 
-    // Step 3: Create default admin
-    logs.push('[3/3] Creating default admin account...')
+    // Create default admin
+    logs.push('Creating default admin...')
+    const adminId = 'admin-' + Date.now()
     const hashedPassword = await bcrypt.hash('admin123', 10)
-    admin = await db.user.create({
-      data: {
-        username: 'admin',
-        password: hashedPassword,
-        name: 'Administrator',
-        role: 'ADMIN',
-      },
-      select: { id: true, username: true, name: true, role: true },
+    await client.execute({
+      sql: `INSERT INTO users (id, username, password, name, role) VALUES (?, ?, ?, ?, ?)`,
+      args: [adminId, 'admin', hashedPassword, 'Administrator', 'ADMIN'],
     })
-
-    logs.push(`✓ Admin created: ${admin.username}`)
+    logs.push('✓ Admin created: admin / admin123')
 
     return NextResponse.json({
       status: 'success',
       message: 'Database initialized! You can now login.',
-      admin: { username: admin.username, name: admin.name },
+      admin: { username: 'admin', name: 'Administrator' },
       credentials: {
         username: 'admin',
-        password: 'admin123 (CHANGE THIS IMMEDIATELY AFTER LOGIN)',
+        password: 'admin123 (CHANGE THIS IMMEDIATELY)',
       },
       logs,
       duration: `${Date.now() - startTime}ms`,
     })
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
-    logs.push(`Fatal error: ${errMsg.substring(0, 500)}`)
+    logs.push(`Fatal: ${errMsg.substring(0, 500)}`)
     return NextResponse.json({
       status: 'error',
       message: 'Setup failed',

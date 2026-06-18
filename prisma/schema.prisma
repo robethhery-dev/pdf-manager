@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 model User {
@@ -25,8 +26,8 @@ model PdfDocument {
   filename     String          @unique
   originalName String
   totalPages   Int
-  fileData     Bytes           // PDF binary stored in DB (works on Vercel serverless)
-  fileSize     Int             // file size in bytes
+  fileData     Bytes           // PDF binary stored in DB
+  fileSize     Int
   uploadedBy   String
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -39,7 +40,7 @@ model PageAssignment {
   id          String       @id @default(cuid())
   userId      String
   pdfId       String
-  pageNumbers String       // JSON array of page numbers, e.g. "[1,2,3]"
+  pageNumbers String       // JSON array of page numbers
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
