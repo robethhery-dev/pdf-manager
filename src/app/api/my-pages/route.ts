@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { getCurrentUser } from '@/lib/auth'
+import { getDb, getCurrentUser, row } from '@/lib/db-libsql'
 
 export async function GET() {
   try {
@@ -10,53 +9,51 @@ export async function GET() {
     }
 
     if (currentUser.role === 'ADMIN') {
-      // Admin can see all PDFs with their full page count
-      const pdfs = await db.pdfDocument.findMany({
-        orderBy: { createdAt: 'desc' },
-        include: {
-          assignments: {
-            select: { id: true, userId: true, pageNumbers: true, user: { select: { name: true, username: true } } },
-          },
-        },
+      // Admin melihat semua PDF dengan semua halaman
+      const result = await getDb().execute(
+        `SELECT p.id, p.originalName, p.totalPages, p.createdAt
+         FROM pdf_documents p
+         ORDER BY p.createdAt DESC`
+      )
+      const pages = result.rows.map((r) => {
+        const raw = row(r as Record<string, unknown>)
+        const total = Number(raw.totalPages)
+        return {
+          id: String(raw.id),
+          originalName: String(raw.originalName),
+          totalPages: total,
+          assignedPages: Array.from({ length: total }, (_, i) => i + 1),
+          createdAt: raw.createdAt,
+        }
       })
-
-      const formatted = pdfs.map((pdf) => ({
-        id: pdf.id,
-        originalName: pdf.originalName,
-        totalPages: pdf.totalPages,
-        assignedPages: Array.from({ length: pdf.totalPages }, (_, i) => i + 1), // Admin sees all pages
-        assignments: pdf.assignments.map((a) => ({
-          id: a.id,
-          userId: a.userId,
-          pageNumbers: JSON.parse(a.pageNumbers),
-          user: a.user,
-        })),
-        createdAt: pdf.createdAt,
-      }))
-
-      return NextResponse.json({ pages: formatted })
+      return NextResponse.json({ pages })
     }
 
-    // Regular user - only see assigned pages
-    const assignments = await db.pageAssignment.findMany({
-      where: { userId: currentUser.userId },
-      include: {
-        pdf: true,
-      },
-      orderBy: { createdAt: 'desc' },
+    // User biasa - hanya lihat yang di-assign
+    const result = await getDb().execute({
+      sql: `SELECT a.pageNumbers, a.createdAt, p.id AS pdfId, p.originalName, p.totalPages
+            FROM page_assignments a
+            JOIN pdf_documents p ON a.pdfId = p.id
+            WHERE a.userId = ?
+            ORDER BY a.createdAt DESC`,
+      args: [currentUser.userId],
     })
 
-    const formatted = assignments.map((a) => ({
-      id: a.pdfId,
-      originalName: a.pdf.originalName,
-      totalPages: a.pdf.totalPages,
-      assignedPages: JSON.parse(a.pageNumbers),
-      createdAt: a.createdAt,
-    }))
+    const pages = result.rows.map((r) => {
+      const raw = row(r as Record<string, unknown>)
+      return {
+        id: String(raw.pdfId),
+        originalName: String(raw.originalName),
+        totalPages: Number(raw.totalPages),
+        assignedPages: JSON.parse(String(raw.pageNumbers)) as number[],
+        createdAt: raw.createdAt,
+      }
+    })
 
-    return NextResponse.json({ pages: formatted })
+    return NextResponse.json({ pages })
   } catch (error) {
     console.error('Get my pages error:', error)
-    return NextResponse.json({ error: 'Terjadi kesalahan server' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : 'unknown'
+    return NextResponse.json({ error: 'Terjadi kesalahan server', detail: msg }, { status: 500 })
   }
 }
