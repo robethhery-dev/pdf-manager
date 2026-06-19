@@ -6,7 +6,7 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const url = process.env.DATABASE_URL
 
   if (!url) {
@@ -42,25 +42,60 @@ function createPrismaClient() {
   )
 }
 
-// LAZY INITIALIZATION — hindari instantiate Prisma/libSQL saat build time.
-// Module-level instantiation bisa crash `next build` karena process.env.DATABASE_URL
-// mungkin undefined saat Next.js collect static page data.
 let _db: PrismaClient | null = null
 
 function getDb(): PrismaClient {
   if (_db) return _db
-  _db = globalForPrisma.prisma ?? createPrismaClient()
-  if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = _db
+  const client = globalForPrisma.prisma ?? createPrismaClient()
+  if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = client
+  _db = client
   return _db
 }
 
-// Proxy agar `import { db }` tetap kompatibel, tapi instantiasi tertunda sampai dipakai.
-export const db = new Proxy({} as PrismaClient, {
-  get(_target, prop) {
-    const client = getDb()
-    const value = (client as unknown as Record<string | symbol, unknown>)[prop]
-    return typeof value === 'function'
-      ? (value as (...args: unknown[]) => unknown).bind(client)
-      : value
-  },
-}) as PrismaClient
+// Lazy proxy: akses `db.user.findUnique(...)` tidak akan instantiate Prisma
+// sampai `findUnique` benar-benar dipanggil (saat runtime, bukan build time).
+// Setiap property access mengembalikan proxy lain, dan hanya function call
+// yang trigger getDb().
+function makeLazyProxy(path: string[] = []): unknown {
+  const fn = function (...args: unknown[]) {
+    // Ini dipanggil saat proxy digunakan sebagai function (mis. db(...))
+    const client = getDb() as unknown as Record<string, unknown>
+    let cur: unknown = client
+    for (const p of path) {
+      cur = (cur as Record<string, unknown>)[p]
+    }
+    return typeof cur === 'function' ? (cur as (...a: unknown[]) => unknown).apply(
+      (client as Record<string, unknown>)[path[0] ?? ''] ?? client,
+      args
+    ) : cur
+  }
+  return new Proxy(fn, {
+    get(_t, prop) {
+      if (typeof prop === 'string') {
+        return makeLazyProxy([...path, prop])
+      }
+      return undefined
+    },
+    apply(_t, _thisArg, args) {
+      const client = getDb() as unknown as Record<string, unknown>
+      let cur: unknown = client
+      for (const p of path) {
+        cur = (cur as Record<string, unknown>)[p]
+      }
+      if (typeof cur === 'function') {
+        // bind `this` ke parent object agar Prisma delegate jalan
+        let parent: unknown = client
+        for (let i = 0; i < path.length - 1; i++) {
+          parent = (parent as Record<string, unknown>)[path[i]]
+        }
+        const thisArg = path.length > 0
+          ? (client as Record<string, unknown>)[path[0]]
+          : client
+        return (cur as (...a: unknown[]) => unknown).apply(thisArg, args)
+      }
+      return cur
+    },
+  })
+}
+
+export const db = makeLazyProxy() as PrismaClient
